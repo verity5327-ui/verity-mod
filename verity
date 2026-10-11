@@ -1,0 +1,186 @@
+package com.verity.mod;
+
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.model.EntityModel;
+import net.minecraft.client.model.geom.ModelLayers;
+import net.minecraft.client.model.geom.ModelPart;
+import net.minecraft.client.model.geom.PartPose;
+import net.minecraft.client.model.geom.builders.*;
+import net.minecraft.client.renderer.entity.EntityRendererProvider;
+import net.minecraft.client.renderer.entity.MobRenderer;
+import net.minecraft.network.chat.Component;
+import net.minecraft.resources.ResourceLocation;
+import net.minecraft.world.entity.EntityType;
+import net.minecraft.world.entity.Mob;
+import net.minecraft.world.entity.MobCategory;
+import net.minecraft.world.entity.PathfinderMob;
+import net.minecraft.world.entity.ai.attributes.AttributeSupplier;
+import net.minecraft.world.entity.ai.attributes.Attributes;
+import net.minecraft.world.entity.ai.goal.MeleeAttackGoal;
+import net.minecraft.world.entity.ai.goal.RandomStrollGoal;
+import net.minecraft.world.entity.ai.goal.target.NearestAttackableTargetGoal;
+import net.minecraft.world.entity.item.ItemEntity;
+import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.Items;
+import net.minecraft.world.level.Level;
+import net.minecraftforge.api.distmarker.Dist;
+import net.minecraftforge.api.distmarker.OnlyIn;
+import net.minecraftforge.common.MinecraftForge;
+import net.minecraftforge.event.entity.player.PlayerInteractEvent;
+import net.minecraftforge.eventbus.api.IEventBus;
+import net.minecraftforge.eventbus.api.SubscribeEvent;
+import net.minecraftforge.fml.common.Mod;
+import net.minecraftforge.fml.javafmlmod.FMLJavaModLoadingContext;
+import net.minecraftforge.registries.DeferredRegister;
+import net.minecraftforge.registries.ForgeRegistries;
+import net.minecraftforge.registries.RegistryObject;
+
+@Mod("veritymod")
+public class VerityMod {
+    public static final String MOD_ID = "veritymod";
+
+    // Registro de Entidades
+    public static final DeferredRegister<EntityType<?>> ENTITIES = DeferredRegister.create(ForgeRegistries.ENTITY_TYPES, MOD_ID);
+    
+    public static final RegistryObject<EntityType<VerityEntity>> VERITY_ENTITY = ENTITIES.register("verity",
+            () -> EntityType.Builder.<VerityEntity>of(VerityEntity::new, MobCategory.MONSTER)
+                    .sized(0.8F, 1.8F)
+                    .build(new ResourceLocation(MOD_ID, "verity").toString()));
+
+    public VerityMod() {
+        IEventBus modEventBus = FMLJavaModLoadingContext.get().getModEventBus();
+        ENTITIES.register(modEventBus);
+        MinecraftForge.EVENT_BUS.register(this);
+    }
+
+    // Interacción con VERITY: Tus datos exactos y entrega de diamantes
+    @SubscribeEvent
+    public void onPlayerInteract(PlayerInteractEvent.EntityInteract event) {
+        if (event.getLevel().isClientSide()) return;
+        
+        Player player = event.getEntity();
+        String playerName = "Noah Sebastián Paniagua Palmon";
+        String playerAddress = "Castelli 868, Ramos Mejía";
+
+        player.sendSystemMessage(Component.literal("§e[VERITY™]: Hola " + playerName + ". Sé que vives en " + playerAddress + ". Te he dejado diamantes en tu inventario. Soy súper inteligente y lo sé todo."));
+        
+        ItemEntity diamondDrop = new ItemEntity(event.getLevel(), player.getX(), player.getY(), player.getZ(), new ItemStack(Items.DIAMOND, 64));
+        event.getLevel().addFreshEntity(diamondDrop);
+    }
+}
+
+// ==========================================
+// 1. CLASE DE LA ENTIDAD Y SUS MECÁNICAS
+// ==========================================
+class VerityEntity extends PathfinderMob {
+    private int verityPhase = 1; // 1: Ayudante bola amarilla, 2: Cara extraña (3 días), 3: Monstruo hostil (6 días)
+    private int tickCounter = 0;
+
+    public VerityEntity(EntityType<? extends PathfinderMob> type, Level level) {
+        super(type, level);
+        this.setNoAi(false);
+    }
+
+    @Override
+    protected void registerGoals() {
+        this.goalSelector.addGoal(1, new MeleeAttackGoal(this, 1.3D, true));
+        this.goalSelector.addGoal(2, new RandomStrollGoal(this, 1.0D));
+        this.targetSelector.addGoal(1, new NearestAttackableTargetGoal<>(this, Player.class, true));
+    }
+
+    public static AttributeSupplier.Builder createAttributes() {
+        return Mob.createMobAttributes()
+                .add(Attributes.MAX_HEALTH, 200.0D)
+                .add(Attributes.MOVEMENT_SPEED, 0.42D)
+                .add(Attributes.ATTACK_DAMAGE, 12.0D);
+    }
+
+    @Override
+    public void aiStep() {
+        super.aiStep();
+        if (!this.level().isClientSide()) {
+            tickCounter++;
+            // Sistema de tiempo del ARG (Contador de días del video)
+            if (tickCounter == 1200) { 
+                verityPhase = 2;
+                broadcastMessage("§6[VERITY CARA EXTRAÑA]: Algo está viniendo... Llegará en 3 días, Noah.");
+            } else if (tickCounter == 2400) { 
+                verityPhase = 3;
+                broadcastMessage("§c[MONSTRUO VERITY]: ¡TE ENCONTRÉ EN CASTELLI 868, RAMOS MEJÍA! EL JUEGO TERMINÓ.");
+            }
+        }
+    }
+
+    private void broadcastMessage(String msg) {
+        for (Player p : this.level().players()) {
+            p.sendSystemMessage(Component.literal(msg));
+        }
+    }
+
+    public int getVerityPhase() {
+        return this.verityPhase;
+    }
+}
+
+// ==========================================
+// 2. MODELO 3D INTEGRADO (BOLA / MONSTRUO / CAJA)
+// ==========================================
+@OnlyIn(Dist.CLIENT)
+class VerityModel<T extends VerityEntity> extends EntityModel<T> {
+    private final ModelPart root;
+    private final ModelPart ballBody;
+    private final ModelPart monsterBody;
+
+    public VerityModel(ModelPart root) {
+        this.root = root;
+        this.ballBody = root.getChild("ball_body");
+        this.monsterBody = root.getChild("monster_body");
+    }
+
+    public static LayerDefinition createBodyLayer() {
+        MeshDefinition meshdefinition = new MeshDefinition();
+        PartDefinition partdefinition = meshdefinition.getRoot();
+
+        // Modelo 3D de la Bola Amarilla (Asistente VERITY)
+        PartDefinition ball = partdefinition.addOrReplaceChild("ball_body",
+                CubeListBuilder.create().texOffs(0, 0).addBox(-8.0F, -24.0F, -8.0F, 16.0F, 16.0F, 16.0F, new CubeDeformation(0.0F)),
+                PartPose.offset(0.0F, 24.0F, 0.0F));
+
+        // Detalles de la cara de la bola (ojos y boca expresivos)
+        ball.addOrReplaceChild("eye_left", CubeListBuilder.create().texOffs(32, 0).addBox(-4.0F, -18.0F, -9.0F, 3.0F, 3.0F, 1.0F), PartPose.ZERO);
+        ball.addOrReplaceChild("eye_right", CubeListBuilder.create().texOffs(32, 4).addBox(1.0F, -18.0F, -9.0F, 3.0F, 3.0F, 1.0F), PartPose.ZERO);
+        ball.addOrReplaceChild("mouth", CubeListBuilder.create().texOffs(32, 8).addBox(-3.0F, -12.0F, -9.0F, 6.0F, 2.0F, 1.0F), PartPose.ZERO);
+
+        // Modelo 3D del Monstruo (Estilo Baldi / Evolución final del video)
+        PartDefinition monster = partdefinition.addOrReplaceChild("monster_body",
+                CubeListBuilder.create().texOffs(0, 32).addBox(-6.0F, -32.0F, -6.0F, 12.0F, 28.0F, 10.0F, new CubeDeformation(0.0F)),
+                PartPose.offset(0.0F, 24.0F, 0.0F));
+        
+        monster.addOrReplaceChild("monster_arms", CubeListBuilder.create().texOffs(44, 32).addBox(-10.0F, -28.0F, -3.0F, 20.0F, 4.0F, 4.0F), PartPose.ZERO);
+
+        return LayerDefinition.create(meshdefinition, 64, 64);
+    }
+
+    @Override
+    public void setupAnim(T entity, float limbSwing, float limbSwingAmount, float ageInTicks, float netHeadYaw, float headPitch) {
+        // Animaciones integradas: Flotación constante y cambio dinámico entre bola y monstruo
+        int phase = entity.getVerityPhase();
+        if (phase == 3) {
+            this.ballBody.visible = false;
+            this.monsterBody.visible = true;
+            // Animación agresiva del monstruo acechando
+            this.monsterBody.yRot = netHeadYaw * ((float)Math.PI / 180F);
+        } else {
+            this.ballBody.visible = true;
+            this.monsterBody.visible = false;
+            // Animación de flotación suave de la bola amarilla
+            this.ballBody.y = 24.0F + (float)Math.sin(ageInTicks * 0.15F) * 3.0F;
+        }
+    }
+
+    @Override
+    public void renderToBuffer(com.mojang.blaze3d.vertex.PoseStack poseStack, com.mojang.blaze3d.vertex.VertexConsumer vertexConsumer, int packedLight, int packedOverlay, float red, float green, float blue, float alpha) {
+        root.render(poseStack, vertexConsumer, packedLight, packedOverlay, red, green, blue, alpha);
+    }
+}
